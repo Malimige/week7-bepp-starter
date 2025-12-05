@@ -1,28 +1,27 @@
 const User = require("../models/userModel");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const validator = require("validator");
 
 // Generate JWT
 const generateToken = (_id) => {
-  return jwt.sign({ _id }, process.env.SECRET, {
-    expiresIn: "3d",
-  });
+  return jwt.sign({ _id }, process.env.SECRET, { expiresIn: "3d" });
 };
 
-// @desc    Register new user
-// @route   POST /api/users/signup
-// @access  Public
+// @desc Register user
 const signupUser = async (req, res) => {
-  const {
-    name,
-    email,
-    password,
-    phone_number,
-    gender,
-    date_of_birth,
-    membership_status,
-  } = req.body;
   try {
+    const {
+      name,
+      email,
+      password,
+      phone_number,
+      gender,
+      date_of_birth,
+      membership_status,
+    } = req.body;
+
+    // Validate required fields
     if (
       !name ||
       !email ||
@@ -32,20 +31,31 @@ const signupUser = async (req, res) => {
       !date_of_birth ||
       !membership_status
     ) {
-      res.status(400);
-      throw new Error("Please add all fields");
+      return res.status(400).json({ error: "Please add all fields" });
     }
-    // Check if user exists
-    const userExists = await User.findOne({ email });
 
-    if (userExists) {
-      res.status(400);
-      throw new Error("User already exists");
+    // Email check
+    if (!validator.isEmail(email)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
+    // Password length check
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Password too short" });
+    }
+
+    // Check existing user
+    const exists = await User.findOne({ email });
+    if (exists) {
+      return res.status(400).json({ error: "User already exists" });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Convert date string to actual Date → IMPORTANT FIX
+    const dob = new Date(date_of_birth);
 
     // Create user
     const user = await User.create({
@@ -54,57 +64,51 @@ const signupUser = async (req, res) => {
       password: hashedPassword,
       phone_number,
       gender,
-      date_of_birth,
+      date_of_birth: dob,
       membership_status,
     });
 
-    if (user) {
-      // console.log(user._id);
-     const token = generateToken(user._id);
-      res.status(201).json({ email, token });
-    } else {
-      res.status(400);
-      throw new Error("Invalid user data");
-    }
+    return res.status(201).json({
+      email: user.email,
+      token: generateToken(user._id),
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.log("SIGNUP ERROR:", error.message);
+    return res.status(400).json({ error: error.message });
   }
 };
 
-// @desc    Authenticate a user
-// @route   POST /api/users/login
-// @access  Public
+// @desc Login user
 const loginUser = async (req, res) => {
-  const { email, password } = req.body;
   try {
-    // Check for user email
+    const { email, password } = req.body;
+
+    if (!email || !password)
+      return res.status(400).json({ error: "Email and password required" });
+
     const user = await User.findOne({ email });
 
-    if (user && (await bcrypt.compare(password, user.password))) {
-      const token = generateToken(user._id);
-      res.status(200).json({ email, token });
-    } else {
-      res.status(400);
-      throw new Error("Invalid credentials");
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    const correct = await bcrypt.compare(password, user.password);
+    if (!correct) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    return res.status(200).json({
+      email: user.email,
+      token: generateToken(user._id),
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.log("LOGIN ERROR:", error.message);
+    return res.status(400).json({ error: error.message });
   }
 };
 
-// @desc    Get user data
-// @route   GET /api/users/me
-// @access  Private
 const getMe = async (req, res) => {
-  try {
-    res.status(200).json(req.user);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+  res.status(200).json(req.user);
 };
 
-module.exports = {
-  signupUser,
-  loginUser,
-  getMe,
-};
+module.exports = { signupUser, loginUser, getMe };

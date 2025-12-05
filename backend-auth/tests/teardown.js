@@ -1,3 +1,3 @@
-module.exports = () => {
+module.exports = async () => {
     process.exit(0)
-}
+};
