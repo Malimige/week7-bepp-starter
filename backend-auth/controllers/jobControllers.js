@@ -1,103 +1,91 @@
-const mongoose = require("mongoose");
 const Job = require("../models/jobModel");
 
-// Get all jobs
-const getAllJobs = async (req, res) => {
-
-  try {
-    const jobs = await Job.find({ }).sort({ createdAt: -1 });
-    res.status(200).json(jobs);
-  } catch (error) {
-    console.error("Error fetching jobs:", error);
-    res.status(500).json({ error: "Server Error" });
-  }
-};
-
-// Create a new job
+// --------------------------------------
+// CREATE JOB (Protected)
+// --------------------------------------
 const createJob = async (req, res) => {
-
   try {
-    const user_id = req.user._id;
-    const newJob = new Job({
-      ...req.body,
+    const { title, type, description, company, user_id } = req.body;
+
+    // Validate required fields
+    if (!title || !type || !description || !company || !user_id) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const newJob = await Job.create({
+      title,
+      type,
+      description,
+      company,
       user_id,
     });
-    await newJob.save();
-    res.status(201).json(newJob);
+
+    return res.status(201).json(newJob);
   } catch (error) {
-    console.error("Error creating job:", error);
-    res.status(500).json({ error: "Server Error" });
+    console.error("Job Create Error:", error);
+    return res.status(500).json({ error: "Server Error" });
   }
 };
 
-// Get job by ID
-const getJobById = async (req, res) => {
-  const { jobId } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(jobId)) {
-    return res.status(404).json({ error: "No such job" });
-  }
-
-  try {
-    const job = await Job.findById(jobId);
-    if (!job) {
-      console.log("Job not found");
-      return res.status(404).json({ message: "Job not found" });
-    }
-    res.status(200).json(job);
-  } catch (error) {
-    console.error("Error fetching job:", error);
-    res.status(500).json({ error: "Server Error" });
-  }
-};
-
-// Update job by ID
+// --------------------------------------
+// UPDATE JOB (Protected + Ownership Check)
+// --------------------------------------
 const updateJob = async (req, res) => {
-  const { jobId } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(jobId)) {
-    return res.status(404).json({ error: "No such job" });
-  }
-
   try {
-    // const user_id = req.user._id;
-    const job = await Job.findOneAndUpdate(
-      { _id: jobId },
-      { ...req.body },
-      { new: true }
-    );
+    const job = await Job.findById(req.params.id);
+
     if (!job) {
-      return res.status(404).json({ message: "Job not found" });
+      return res.status(404).json({ error: "Job not found" });
     }
-    res.status(200).json(job);
+
+    // Authorization check — only owner can update
+    if (String(job.user_id) !== String(req.user._id)) {
+      return res
+        .status(403)
+        .json({ error: "Unauthorized to update this job" });
+    }
+
+    const updatedJob = await Job.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+
+    return res.status(200).json(updatedJob);
   } catch (error) {
-    console.error("Error updating job:", error);
-    res.status(500).json({ error: "Server Error" });
+    console.error("Job Update Error:", error);
+    return res.status(500).json({ error: "Server Error" });
   }
 };
 
-// Delete job by ID
+// --------------------------------------
+// DELETE JOB (Protected + Ownership Check)
+// --------------------------------------
 const deleteJob = async (req, res) => {
-  const { jobId } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(jobId)) {
-    return res.status(404).json({ error: "No such job" });
-  }
-
   try {
-    // const user_id = req.user._id;
-    const job = await Job.findOneAndDelete({ _id: jobId });
+    const job = await Job.findById(req.params.id);
+
     if (!job) {
-      return res.status(404).json({ message: "Job not found" });
+      return res.status(404).json({ error: "Job not found" });
     }
-    res.status(204).send(); // 204 No Content
+
+    // Authorization check — only owner can delete
+    if (String(job.user_id) !== String(req.user._id)) {
+      return res
+        .status(403)
+        .json({ error: "Unauthorized to delete this job" });
+    }
+
+    await Job.findByIdAndDelete(req.params.id);
+
+    return res.status(200).json({ message: "Job deleted" });
   } catch (error) {
-    console.error("Error deleting job:", error);
-    res.status(500).json({ error: "Server Error" });
+    console.error("Job Delete Error:", error);
+    return res.status(500).json({ error: "Server Error" });
   }
 };
 
 module.exports = {
-  getAllJobs,
   createJob,
-  getJobById,
   updateJob,
   deleteJob,
 };
